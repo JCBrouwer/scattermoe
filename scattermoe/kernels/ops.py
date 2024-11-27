@@ -47,6 +47,8 @@ def padded_block_indices(sorted_experts_idxs: torch.Tensor, k: int, N_BLOCK_SIZE
 def _scatter2scatter_configs():
     return [
         triton.Config({'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 32, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
     ]
 
 @triton.autotune(configs=_scatter2scatter_configs(), key=['M', 'N', 'K'], )
@@ -185,6 +187,8 @@ def scatter2scatter_compileable(
 def _config_XtY():
     return [
         triton.Config({'BLOCK_N': 128, 'BLOCK_K': 128, 'BLOCK_M': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64, 'BLOCK_K': 64, 'BLOCK_M': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 32, 'BLOCK_K': 32, 'BLOCK_M': 32}, num_stages=4, num_warps=4),
     ]
 
 def group_bwd_W(DY, X, expert_offsets, E):
@@ -302,8 +306,8 @@ def _groupXtY(
 def _config_grouping():
     return [
         triton.Config({'BLOCK_N': 256, 'BLOCK_K': 128}, num_stages=4, num_warps=4),
-        # triton.Config({'BLOCK_N': 128, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
-        # triton.Config({'BLOCK_N': 64, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 128, 'BLOCK_K': 64}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
     ]
 
 def group(A, sorted_expert_idxs, coeff=None, fan_out=1, out=None):
