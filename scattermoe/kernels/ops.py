@@ -31,13 +31,13 @@ def compileable_bincount(x: torch.Tensor, minlength: int) -> torch.Tensor:
 def _(x: torch.Tensor, minlength: int) -> torch.Tensor:
     return torch.empty(minlength, dtype=torch.long, device=x.device)
 
-@torch_compile
+@torch_compile()
 def flatten_and_sort(expert_idxs:torch.Tensor):
     flattened_expert_idxs = expert_idxs.flatten()
     sorted_expert_idxs, sorted_scattered_idxs = torch.sort(flattened_expert_idxs)
     return sorted_expert_idxs, sorted_scattered_idxs
 
-@torch_compile
+@torch_compile()
 def padded_block_indices(sorted_experts_idxs: torch.Tensor, k: int, N_BLOCK_SIZE: int=BLOCK_M) :
     expert_counts = compileable_bincount(sorted_experts_idxs, minlength=k)
     padded_block_counts = ((expert_counts - 1) // N_BLOCK_SIZE) + 1
