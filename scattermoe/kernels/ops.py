@@ -1,3 +1,5 @@
+from typing import Any, Callable
+
 import torch
 import triton
 import triton.language as tl
@@ -5,6 +7,21 @@ from torch.nn import functional as F
 
 BLOCK_M = 128
 ALLOW_TF32 = False
+
+def turing_or_later() -> bool:
+    return torch.cuda.is_available() and torch.cuda.get_device_capability() >= (7, 0)
+
+def torch_compile(*args: Any, **kwargs: Any) -> Callable:
+    """Wrapper around torch.compile that checks whether the current device supports it.
+    Falls back to the original function/model if compilation is not supported.
+    Can be used as either a function or decorator."""
+
+    def decorator(fn: Callable) -> Callable:
+        if turing_or_later():
+            return torch.compile(fn, **kwargs)
+        return fn
+
+    return decorator
 
 @torch.library.custom_op("scattermoe::bincount", mutates_args={})
 def compileable_bincount(x: torch.Tensor, minlength: int) -> torch.Tensor:
@@ -14,13 +31,13 @@ def compileable_bincount(x: torch.Tensor, minlength: int) -> torch.Tensor:
 def _(x: torch.Tensor, minlength: int) -> torch.Tensor:
     return torch.empty(minlength, dtype=torch.long, device=x.device)
 
-#@torch.compile
+@torch_compile
 def flatten_and_sort(expert_idxs:torch.Tensor):
     flattened_expert_idxs = expert_idxs.flatten()
     sorted_expert_idxs, sorted_scattered_idxs = torch.sort(flattened_expert_idxs)
     return sorted_expert_idxs, sorted_scattered_idxs
 
-#@torch.compile
+@torch_compile
 def padded_block_indices(sorted_experts_idxs: torch.Tensor, k: int, N_BLOCK_SIZE: int=BLOCK_M) :
     expert_counts = compileable_bincount(sorted_experts_idxs, minlength=k)
     padded_block_counts = ((expert_counts - 1) // N_BLOCK_SIZE) + 1
@@ -49,6 +66,7 @@ def _scatter2scatter_configs():
         triton.Config({'BLOCK_N': 128, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_N': 64, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_N': 32, 'BLOCK_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64, 'BLOCK_K': 16}, num_stages=4, num_warps=4),
     ]
 
 @triton.autotune(configs=_scatter2scatter_configs(), key=['M', 'N', 'K'], )
@@ -189,6 +207,7 @@ def _config_XtY():
         triton.Config({'BLOCK_N': 128, 'BLOCK_K': 128, 'BLOCK_M': 32}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_N': 64, 'BLOCK_K': 64, 'BLOCK_M': 32}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_N': 32, 'BLOCK_K': 32, 'BLOCK_M': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_N': 64, 'BLOCK_K': 64, 'BLOCK_M': 16}, num_stages=4, num_warps=4),
     ]
 
 def group_bwd_W(DY, X, expert_offsets, E):
